@@ -9,22 +9,35 @@ export default function Model({ movement, ...props }) {
   const { nodes, materials, animations } = useGLTF('/charcter.glb')
   const { actions } = useAnimations(animations, group)
   const [position, setPosition] = useState([0, 3.5, 0])
+  const [quaternion, setQuaternion] = useState()
 
+  // Character physics
   const [, api] = useSphere(
     () => ({
       mass: 10,
       ...props,
       args: [0.55],
       position: [0, 3.5, 0],
-      rotation: [Math.PI / 2, 0, 0],
     }),
     group,
   )
 
+  // Subscribe to character position
   api.position.subscribe((p) => setPosition(p))
 
+  // Set initial rotation
   useEffect(() => {
-    if (movement) {
+    const q = new THREE.Quaternion()
+    const angle = Math.PI / 2
+    const axis = new THREE.Vector3(1, 0, 0).normalize()
+    q.setFromAxisAngle(axis, angle)
+    api.quaternion.copy(q)
+    setQuaternion(q)
+  }, [])
+
+  // Start character animations
+  useEffect(() => {
+    if (movement.forward || movement.backward) {
       actions.Idle.stop()
       actions.Walk.play()
     } else {
@@ -38,16 +51,47 @@ export default function Model({ movement, ...props }) {
   useFrame(() => {
     object.position.set(position[0], position[1], position[2])
 
-    api.applyForce(object.position.normalize().multiplyScalar(-100).toArray(), [
-      0,
-      0,
-      0,
-    ])
+    // Apply planet gravity to character
+    api.applyForce(
+      object.position.normalize().multiplyScalar(-1000).toArray(),
+      [0, 0, 0],
+    )
 
-    if (movement) {
+    if (movement.forward) {
+      // Move character forward
       api.applyLocalImpulse([0, 0.2, 0], [0, 0, 0])
+    } else if (movement.backward) {
+      // Move character backward
+      api.applyLocalImpulse([0, -0.2, 0], [0, 0, 0])
     } else {
+      // Stop character
       api.velocity.set(0, 0, 0)
+    }
+
+    if (movement.left) {
+      // Rotate character left
+      const rotation = new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(0, 1, 0),
+        THREE.MathUtils.degToRad(2),
+      )
+
+      rotation.multiplyQuaternions(rotation, quaternion)
+
+      api.quaternion.copy(rotation)
+      setQuaternion(rotation)
+    }
+
+    if (movement.right) {
+      // Rotate character right
+      const rotation = new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(0, 1, 0),
+        THREE.MathUtils.degToRad(-2),
+      )
+
+      rotation.multiplyQuaternions(rotation, quaternion)
+
+      api.quaternion.copy(rotation)
+      setQuaternion(rotation)
     }
   })
 
